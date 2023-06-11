@@ -1,5 +1,10 @@
 # tokio-tutorial
 
+[![GitHub Actions workflow badge][github-actions-badge]][github-actions-url]
+
+[github-actions-badge]: https://github.com/nukopy/tokio-tutorial/actions/workflows/ci.yml/badge.svg?branch=main
+[github-actions-url]: https://github.com/nukopy/tokio-tutorial/actions/workflows/ci.yml?query=branch:main
+
 ## Environments
 
 - Rust 1.69.0
