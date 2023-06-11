@@ -1,0 +1,7 @@
+## Local
+.envrc
+.vscode
+*.code-workspace
+
+## Rust
+/target
