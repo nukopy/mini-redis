@@ -1,9 +1,11 @@
-# tokio-tutorial
+# mini-redis
 
 [![GitHub Actions workflow badge][github-actions-badge]][github-actions-url]
 
-[github-actions-badge]: https://github.com/nukopy/tokio-tutorial/actions/workflows/ci.yml/badge.svg?branch=main
-[github-actions-url]: https://github.com/nukopy/tokio-tutorial/actions/workflows/ci.yml?query=branch:main
+[github-actions-badge]: https://github.com/nukopy/mini-redis/actions/workflows/ci.yml/badge.svg?branch=main
+[github-actions-url]: https://github.com/nukopy/mini-redis/actions/workflows/ci.yml?query=branch:main
+
+Implementation of mini-redis on Tokio tutorial
 
 ## Environments
 

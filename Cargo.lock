@@ -247,6 +247,14 @@ dependencies = [
 
 [[package]]
 name = "mini-redis"
+version = "0.1.0"
+dependencies = [
+ "mini-redis 0.4.1",
+ "tokio",
+]
+
+[[package]]
+name = "mini-redis"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "528890a6b63c88c9bda173867128abe62c0f5050dd959f067aeea09e90439f33"
@@ -600,14 +608,6 @@ checksum = "397c988d37662c7dda6d2208364a706264bf3d6138b11d436cbac0ad38832842"
 dependencies = [
  "futures-core",
  "pin-project-lite",
- "tokio",
-]
-
-[[package]]
-name = "tokio-tutorial"
-version = "0.1.0"
-dependencies = [
- "mini-redis",
  "tokio",
 ]
 
