@@ -4,12 +4,14 @@ use mini_redis::{client, Result};
 async fn main() -> Result<()> {
     // Open a connection to the mini-redis address.
     let addr = "127.0.0.1:6379";
+    println!("Connecting to {}", addr);
     let mut client = client::connect(addr).await?;
 
     // Set the key "hello" with value "world"
     client.set("hello", "world".into()).await?;
 
     // Get key "hello"
+    // let mut client = client::connect(addr).await?;
     let result = client.get("hello").await?;
 
     println!(
