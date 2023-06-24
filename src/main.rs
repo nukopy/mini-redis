@@ -1,7 +1,9 @@
 mod args_parser;
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
+use bytes::Bytes;
 use clap::Parser;
 use mini_redis::{
     Command::{self, Get, Set},
@@ -10,6 +12,8 @@ use mini_redis::{
 use tokio::net::{TcpListener as TokioTcpListener, TcpStream};
 
 use args_parser::ArgsParser;
+
+type Db = Arc<Mutex<HashMap<String, Bytes>>>;
 
 #[tokio::main]
 async fn main() {
@@ -30,6 +34,7 @@ async fn main() {
 struct TcpListener {
     addr: String,
     listener: TokioTcpListener,
+    db: Db,
 }
 
 impl TcpListener {
@@ -37,8 +42,9 @@ impl TcpListener {
         // Initialize TCP listener to accept connections
         // Bind the listener to the address
         let listener = TokioTcpListener::bind(addr.clone()).await.unwrap();
+        let db: Db = Arc::new(Mutex::new(HashMap::new()));
 
-        Self { addr, listener }
+        Self { addr, listener, db }
     }
 
     async fn run(&mut self) {
@@ -49,37 +55,38 @@ impl TcpListener {
 
             // それぞれのインバウンドソケットに対して新しいタスクを spawn する。
             // ソケットは新しいタスクに move（所有権の移動）され、そこで処理される。
+            let db = self.db.clone();
             tokio::spawn(async move {
                 // println!("socket (TcpStream): {:?}", socket);
                 // println!("Accepted connection from {:?}", socket_addr);
-                TcpListener::process(socket).await;
+                TcpListener::process(socket, db).await;
             });
         }
     }
 
-    async fn process(socket: TcpStream) {
-        // データを蓄えるため、HashMap を使用する
-        let mut db: HashMap<String, Vec<u8>> = HashMap::new();
-
+    async fn process(socket: TcpStream, db: Db) {
         // `mini_redis` が提供する Connection によって、ソケットから来るフレームをパースする
         let mut connection = Connection::new(socket);
 
-        while let Some(frame) = connection.read_frame().await.unwrap() {
+        if let Some(frame) = connection.read_frame().await.unwrap() {
             println!("GOT frame: {:?}", frame);
 
             // フレームをパースして、コマンドを取得する
             let response = match Command::from_frame(frame).unwrap() {
                 Set(cmd) => {
-                    db.insert(cmd.key().to_string(), cmd.value().to_vec());
+                    let mut db = db.lock().unwrap();
+                    db.insert(cmd.key().to_string(), cmd.value().clone());
                     println!("OK: Set (key, value) = ({}: {:?})", cmd.key(), cmd.value());
                     Frame::Simple("OK".to_string())
                 }
                 Get(cmd) => {
+                    let db = db.lock().unwrap();
                     if let Some(value) = db.get(cmd.key()) {
                         // `Frame::Bulk` はデータが `Bytes` 型であることを期待する
-
-                        Frame::Bulk(value.clone().into()) // into() を使用して、 `&Vec<u8>` から `Bytes` に変換する
+                        println!("OK: Get (key, value) = ({}: {:?})", cmd.key(), value);
+                        Frame::Bulk(value.clone())
                     } else {
+                        println!("OK: No value for key \"{}\"", cmd.key());
                         Frame::Null
                     }
                 }
