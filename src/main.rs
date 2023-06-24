@@ -1,23 +1,20 @@
+mod args_parser;
+
+use std::collections::HashMap;
+
 use clap::Parser;
-use mini_redis::{Connection, Frame};
+use mini_redis::{
+    Command::{self, Get, Set},
+    Connection, Frame,
+};
 use tokio::net::{TcpListener as TokioTcpListener, TcpStream};
 
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    /// IP address to bind to
-    #[arg(short, long, default_value = "127.0.0.1")]
-    ip: String,
-
-    /// Port number to bind to
-    #[arg(short, long, default_value = "6379")]
-    port: u16,
-}
+use args_parser::ArgsParser;
 
 #[tokio::main]
 async fn main() {
     // Get args
-    let args = Args::parse();
+    let args = ArgsParser::parse();
 
     // Initialize TCP server
     let addr = format!("{}:{}", args.ip, args.port);
@@ -61,9 +58,6 @@ impl TcpListener {
     }
 
     async fn process(socket: TcpStream) {
-        use mini_redis::Command::{self, Get, Set};
-        use std::collections::HashMap;
-
         // データを蓄えるため、HashMap を使用する
         let mut db: HashMap<String, Vec<u8>> = HashMap::new();
 
@@ -97,27 +91,3 @@ impl TcpListener {
         }
     }
 }
-/* mini_redis::Connection の実装
-/// Send and receive `Frame` values from a remote peer.
-///
-/// When implementing networking protocols, a message on that protocol is
-/// often composed of several smaller messages known as frames. The purpose of
-/// `Connection` is to read and write frames on the underlying `TcpStream`.
-///
-/// To read frames, the `Connection` uses an internal buffer, which is filled
-/// up until there are enough bytes to create a full frame. Once this happens,
-/// the `Connection` creates the frame and returns it to the caller.
-///
-/// When sending frames, the frame is first encoded into the write buffer.
-/// The contents of the write buffer are then written to the socket.
-#[derive(Debug)]
-pub struct Connection {
-    // The `TcpStream`. It is decorated with a `BufWriter`, which provides write
-    // level buffering. The `BufWriter` implementation provided by Tokio is
-    // sufficient for our needs.
-    stream: BufWriter<TcpStream>,
-
-    // The buffer for reading frames.
-    buffer: BytesMut,
-}
- */
