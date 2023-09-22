@@ -1,100 +1,114 @@
-mod args_parser;
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use bytes::Bytes;
-use clap::Parser;
 use mini_redis::{
     Command::{self, Get, Set},
     Connection, Frame,
 };
-use tokio::net::{TcpListener as TokioTcpListener, TcpStream};
-
-use args_parser::ArgsParser;
-
-type Db = Arc<Mutex<HashMap<String, Bytes>>>;
+use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
 async fn main() {
-    // Get args
-    let args = ArgsParser::parse();
-
-    // Initialize TCP server
-    let addr = format!("{}:{}", args.ip, args.port);
-    let mut tcp_server = TcpListener::new(addr).await;
+    // Open a connection to the mini-redis address.
+    let addr = String::from("127.0.0.1:6379");
+    let tcp_server = TcpServer::new(addr);
     println!("Listening on {}", tcp_server.addr);
 
-    // Start listening for incoming connections
-    // tcp_server.run();
-    tcp_server.run().await;
-    println!("End of main");
+    // Run the TCP server
+    let output = tcp_server.run();
+    output.await;
 }
 
-struct TcpListener {
+type Db = HashMap<String, Vec<u8>>;
+type DbRef = Arc<Mutex<Db>>;
+
+struct TcpServer {
     addr: String,
-    listener: TokioTcpListener,
-    db: Db,
+    db: DbRef,
 }
 
-impl TcpListener {
-    async fn new(addr: String) -> Self {
-        // Initialize TCP listener to accept connections
-        // Bind the listener to the address
-        let listener = TokioTcpListener::bind(addr.clone()).await.unwrap();
-        let db: Db = Arc::new(Mutex::new(HashMap::new()));
-
-        Self { addr, listener, db }
+impl TcpServer {
+    fn new(addr: String) -> Self {
+        let db = Arc::new(Mutex::new(HashMap::new()));
+        Self { addr, db }
     }
 
-    async fn run(&mut self) {
-        loop {
-            // println!("Waiting for a new connection...");
-            // タプルの 2 つ目の要素は、新しいコネクションの IP とポートの情報を含んでいる
-            let (socket, _socket_addr) = self.listener.accept().await.unwrap();
+    async fn run(&self) {
+        let listener = TcpListener::bind(&self.addr).await.unwrap();
 
-            // それぞれのインバウンドソケットに対して新しいタスクを spawn する。
-            // ソケットは新しいタスクに move（所有権の移動）され、そこで処理される。
+        loop {
+            // タプルの 2 つ目の要素は、新しいコネクションの IP とポートの情報を含んでいる
+            let (socket, socket_addr) = listener.accept().await.unwrap();
+            println!("Accepted connection from {}", socket_addr);
+
+            // それぞれのインバウンドソケットに対して、新しいタスクを生成 spawn する
+            // ソケットは新しいタスクに move され、そこで処理がされる
             let db = self.db.clone();
             tokio::spawn(async move {
-                // println!("socket (TcpStream): {:?}", socket);
-                // println!("Accepted connection from {:?}", socket_addr);
-                TcpListener::process(socket, db).await;
+                TcpServer::process(db, socket).await; // variable `socket` moved here!
             });
         }
     }
 
-    async fn process(socket: TcpStream, db: Db) {
-        // `mini_redis` が提供する Connection によって、ソケットから来るフレームをパースする
-        let mut connection = Connection::new(socket);
+    async fn process(db: DbRef, socket: TcpStream) {
+        // `Connection` 型を使うことで、バイト列ではなく、Redis の「フレーム」を読み書きできるようになる。この `Connection` 型は mini-redis で定義されている。
+        let mut connection = Connection::new(socket); // ソケットから来るフレームをパースする
 
-        if let Some(frame) = connection.read_frame().await.unwrap() {
-            println!("GOT frame: {:?}", frame);
+        match connection.read_frame().await {
+            Ok(Some(frame)) => {
+                println!("GOT frame: {:?}", frame);
 
-            // フレームをパースして、コマンドを取得する
-            let response = match Command::from_frame(frame).unwrap() {
-                Set(cmd) => {
-                    let mut db = db.lock().unwrap();
-                    db.insert(cmd.key().to_string(), cmd.value().clone());
-                    println!("OK: Set (key, value) = ({}: {:?})", cmd.key(), cmd.value());
-                    Frame::Simple("OK".to_string())
-                }
-                Get(cmd) => {
-                    let db = db.lock().unwrap();
-                    if let Some(value) = db.get(cmd.key()) {
-                        // `Frame::Bulk` はデータが `Bytes` 型であることを期待する
-                        println!("OK: Get (key, value) = ({}: {:?})", cmd.key(), value);
-                        Frame::Bulk(value.clone())
-                    } else {
-                        println!("OK: No value for key \"{}\"", cmd.key());
-                        Frame::Null
-                    }
-                }
-                cmd => panic!("unimplemented {:?}", cmd),
-            };
-
-            // クライアントへのレスポンスを書き込む
-            connection.write_frame(&response).await.unwrap();
+                // フレームをパースしてコマンドを実行する
+                let frame = TcpServer::handle_frame(db, frame);
+                let _ = connection.write_frame(&frame).await;
+            }
+            Ok(None) => {
+                println!("Buffer is empty. Connection closed.");
+            }
+            Err(e) => {
+                println!("Connection error: {:?}", e);
+            }
         }
+    }
+
+    fn handle_frame(db: DbRef, frame: Frame) -> Frame {
+        // フレームをパースして、コマンドを取得する
+        match Command::from_frame(frame).unwrap() {
+            Set(cmd) => {
+                println!("SET {:?}", cmd);
+
+                let mut db = db.lock().unwrap();
+                db.insert(cmd.key().to_string(), cmd.value().to_vec());
+                Frame::Simple("OK".to_string())
+            }
+            Get(cmd) => {
+                println!("GET {:?}", cmd);
+
+                // DB から値を取り出す
+                let db = db.lock().unwrap();
+                if let Some(value) = db.get(cmd.key()) {
+                    // `Frame::Bulk` はデータが `Bytes` 型であることを期待する
+                    // .into() メソッドを使って、&Vec<u8> を `Bytes` に変換する
+                    Frame::Bulk(value.clone().into())
+                } else {
+                    Frame::Null
+                }
+            }
+            _ => Frame::Error("unimplemented".to_string()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_works() {
+        assert_eq!(2 + 2, 4);
+    }
+
+    #[test]
+    #[should_panic]
+    fn it_works2() {
+        panic!("Make this test fail");
     }
 }
