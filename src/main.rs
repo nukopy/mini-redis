@@ -19,12 +19,12 @@ async fn main() {
     output.await;
 }
 
-type Db = HashMap<String, Vec<u8>>;
-type DbRef = Arc<Mutex<Db>>;
+type DbInternal = HashMap<String, Vec<u8>>;
+type Db = Arc<Mutex<DbInternal>>;
 
 struct TcpServer {
     addr: String,
-    db: DbRef,
+    db: Db,
 }
 
 impl TcpServer {
@@ -50,7 +50,7 @@ impl TcpServer {
         }
     }
 
-    async fn process(db: DbRef, socket: TcpStream) {
+    async fn process(db: Db, socket: TcpStream) {
         // `Connection` 型を使うことで、バイト列ではなく、Redis の「フレーム」を読み書きできるようになる。この `Connection` 型は mini-redis で定義されている。
         let mut connection = Connection::new(socket); // ソケットから来るフレームをパースする
 
@@ -71,7 +71,7 @@ impl TcpServer {
         }
     }
 
-    fn handle_frame(db: DbRef, frame: Frame) -> Frame {
+    fn handle_frame(db: Db, frame: Frame) -> Frame {
         // フレームをパースして、コマンドを取得する
         match Command::from_frame(frame).unwrap() {
             Set(cmd) => {
