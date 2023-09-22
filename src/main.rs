@@ -59,7 +59,7 @@ impl TcpServer {
                 println!("GOT frame: {:?}", frame);
 
                 // フレームをパースしてコマンドを実行する
-                let frame = TcpServer::handle_frame(db, frame);
+                let frame = TcpServer::handle_frame(frame, db);
                 let _ = connection.write_frame(&frame).await;
             }
             Ok(None) => {
@@ -71,7 +71,7 @@ impl TcpServer {
         }
     }
 
-    fn handle_frame(db: Db, frame: Frame) -> Frame {
+    fn handle_frame(frame: Frame, db: Db) -> Frame {
         // フレームをパースして、コマンドを取得する
         match Command::from_frame(frame).unwrap() {
             Set(cmd) => {
