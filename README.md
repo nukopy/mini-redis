@@ -13,7 +13,7 @@ Implementation of mini-redis on Tokio tutorial
 
 ## Commands
 
-### Mini-Redis Server
+### How to Use Mini-Redis Server
 
 - Installation
 
@@ -42,6 +42,27 @@ mini-redis-cli get key1
 # "value1"
 ```
 
+### Dev
+
+- Run my-mini-redis server
+
+```sh
+cargo run
+```
+
+- Run my-mini-redis server on watch mode
+
+```sh
+cargo watch -x run
+```
+
+- Run client code
+
+```sh
+cargo run --example test-mini-redis
+cargo run --example test-mini-redis-concurrent
+```
+
 ## References
 
 - [(Zenn) Tokio チュートリアル (日本語訳)](https://zenn.dev/magurotuna/books/tokio-tutorial-ja)
@@ -50,3 +71,7 @@ mini-redis-cli get key1
   - [Tokio Tutorial](https://tokio.rs/tokio/tutorial)
   - [github.com/tokio-rs/tokio](https://github.com/tokio-rs/tokio)
   - [github.com/tokio-rs/mini-redis](https://github.com/tokio-rs/mini-redis)
+
+```
+
+```
