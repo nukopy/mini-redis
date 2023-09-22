@@ -6,11 +6,11 @@ async fn main() {
     let tx2 = tx.clone();
 
     tokio::spawn(async move {
-        tx.send("sending from first handle").await;
+        let _ = tx.send("sending from first handle").await;
     });
 
     tokio::spawn(async move {
-        tx2.send("sending from second handle").await;
+        let _ = tx2.send("sending from second handle").await;
     });
 
     while let Some(message) = rx.recv().await {
