@@ -9,10 +9,14 @@ use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
+
     // Open a connection to the mini-redis address.
     let addr = String::from("127.0.0.1:6379");
     let tcp_server = TcpServer::new(addr);
-    println!("Listening on {}", tcp_server.addr);
+    tracing::info!("Listening on {}", tcp_server.addr);
 
     // Run the TCP server
     let output = tcp_server.run();
@@ -39,34 +43,29 @@ impl TcpServer {
         loop {
             // タプルの 2 つ目の要素は、新しいコネクションの IP とポートの情報を含んでいる
             let (socket, socket_addr) = listener.accept().await.unwrap();
-            println!("Accepted connection from {}", socket_addr);
+            tracing::info!("Accepted connection from {}", socket_addr);
 
             // それぞれのインバウンドソケットに対して、新しいタスクを生成 spawn する
             // ソケットは新しいタスクに move され、そこで処理がされる
             let db = self.db.clone();
             tokio::spawn(async move {
-                TcpServer::process(db, socket).await; // variable `socket` moved here!
+                TcpServer::process(socket, db).await; // variable `socket` moved here!
             });
         }
     }
 
-    async fn process(db: Db, socket: TcpStream) {
+    async fn process(socket: TcpStream, db: Db) {
         // `Connection` 型を使うことで、バイト列ではなく、Redis の「フレーム」を読み書きできるようになる。この `Connection` 型は mini-redis で定義されている。
         let mut connection = Connection::new(socket); // ソケットから来るフレームをパースする
 
-        match connection.read_frame().await {
-            Ok(Some(frame)) => {
-                println!("GOT frame: {:?}", frame);
+        while let Ok(Some(frame)) = connection.read_frame().await {
+            tracing::info!("GOT frame: {:?}", frame);
 
-                // フレームをパースしてコマンドを実行する
-                let frame = TcpServer::handle_frame(frame, db);
-                let _ = connection.write_frame(&frame).await;
-            }
-            Ok(None) => {
-                println!("Buffer is empty. Connection closed.");
-            }
-            Err(e) => {
-                println!("Connection error: {:?}", e);
+            // フレームをパースしてコマンドを実行する
+            let response = TcpServer::handle_frame(frame, db.clone());
+            if let Err(e) = connection.write_frame(&response).await {
+                tracing::error!("Failed to write frame: {:?}", e);
+                return;
             }
         }
     }
@@ -75,23 +74,44 @@ impl TcpServer {
         // フレームをパースして、コマンドを取得する
         match Command::from_frame(frame).unwrap() {
             Set(cmd) => {
-                println!("SET {:?}", cmd);
+                tracing::info!("SET {:?}", cmd);
 
-                let mut db = db.lock().unwrap();
-                db.insert(cmd.key().to_string(), cmd.value().to_vec());
-                Frame::Simple("OK".to_string())
+                match db.lock() {
+                    Ok(mut db) => {
+                        // DB に値をセットする
+                        tracing::info!("SET: key={:?}, value={:?}", cmd.key(), cmd.value());
+                        db.insert(cmd.key().to_string(), cmd.value().to_vec());
+                        Frame::Simple("OK".to_string())
+                    }
+                    Err(err) => {
+                        tracing::error!("lock error: {:?}", err);
+                        Frame::Error("lock error".to_string())
+                    }
+                }
             }
             Get(cmd) => {
-                println!("GET {:?}", cmd);
+                tracing::info!("GET {:?}", cmd);
 
                 // DB から値を取り出す
-                let db = db.lock().unwrap();
-                if let Some(value) = db.get(cmd.key()) {
-                    // `Frame::Bulk` はデータが `Bytes` 型であることを期待する
-                    // .into() メソッドを使って、&Vec<u8> を `Bytes` に変換する
-                    Frame::Bulk(value.clone().into())
-                } else {
-                    Frame::Null
+                match db.lock() {
+                    Ok(db) => match db.get(cmd.key()) {
+                        Some(value) => {
+                            tracing::info!(
+                                "GET: key={:?}, value={:?}",
+                                cmd.key(),
+                                db.get(cmd.key())
+                            );
+                            Frame::Bulk(value.clone().into())
+                        }
+                        None => {
+                            tracing::info!("GET: No value found for key {:?}", cmd.key());
+                            Frame::Null
+                        }
+                    },
+                    Err(err) => {
+                        tracing::error!("lock error: {:?}", err);
+                        Frame::Error("lock error".to_string())
+                    }
                 }
             }
             _ => Frame::Error("unimplemented".to_string()),
