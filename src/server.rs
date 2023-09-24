@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::connection::{Connection, ConnectionTrait};
 use mini_redis::{
     Command::{self, Get, Set},
-    Connection, Frame,
+    Frame,
 };
 use tokio::net::{TcpListener, TcpStream};
 

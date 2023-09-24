@@ -1,4 +1,6 @@
-use my_mini_redis::server::MiniRedisServer;
+use clap::Parser;
+
+use my_mini_redis::{args_parser::ArgsParser, server::MiniRedisServer};
 
 #[tokio::main]
 async fn main() {
@@ -7,7 +9,8 @@ async fn main() {
         .init();
 
     // Define server
-    let addr = String::from("127.0.0.1:6379");
+    let args = ArgsParser::parse();
+    let addr = format!("{}:{}", args.ip, args.port);
     let server = MiniRedisServer::new(addr);
 
     // Run server
